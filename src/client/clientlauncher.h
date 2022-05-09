@@ -28,19 +28,17 @@ class RenderingEngine;
 class ClientLauncher
 {
 public:
-	ClientLauncher() = default;
-
+	ClientLauncher(GameStartData& start_data, const Settings &cmd_args);
 	~ClientLauncher();
 
-	bool run(GameStartData &start_data, const Settings &cmd_args);
+	bool run();
 
 private:
-	void init_args(GameStartData &start_data, const Settings &cmd_args);
+	void init_args();
 	bool init_engine();
 	void init_input();
 
-	bool launch_game(std::string &error_message, bool reconnect_requested,
-		GameStartData &start_data, const Settings &cmd_args);
+	bool launch_game(std::string &error_message, bool reconnect_requested);
 
 	void main_menu(MainMenuData *menudata);
 
@@ -52,4 +50,6 @@ private:
 	InputHandler *input = nullptr;
 	MyEventReceiver *receiver = nullptr;
 	gui::IGUISkin *skin = nullptr;
+	GameStartData& start_data;
+	const Settings &cmd_args;
 };

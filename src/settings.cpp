@@ -54,6 +54,13 @@ Settings *SettingsHierarchy::getLayer(int layer) const
 	return layers[layer];
 }
 
+void SettingsHierarchy::clearLayers() {
+	// It'd actually be okay to leak these but we want to please valgrind...
+	for (auto layer : layers)
+		if (layer)
+			delete layer;
+}
+
 
 Settings *SettingsHierarchy::getParent(int layer) const
 {
@@ -105,6 +112,10 @@ Settings *Settings::createLayer(SettingsLayer sl, const std::string &end_tag)
 Settings *Settings::getLayer(SettingsLayer sl)
 {
 	return g_hierarchy.getLayer(sl);
+}
+
+void Settings::clearLayers() {
+	g_hierarchy.clearLayers();
 }
 
 

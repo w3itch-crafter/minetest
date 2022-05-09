@@ -34,6 +34,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "version.h"
 #include "renderingengine.h"
 #include "network/networkexceptions.h"
+#include "asyncloop.h"
 
 #if USE_SOUND
 	#include "sound_openal.h"
@@ -68,6 +69,15 @@ static void dump_start_data(const GameStartData &data)
 }
 #endif
 
+ClientLauncher::ClientLauncher(GameStartData& start_data, const Settings &cmd_args) :
+	start_data(start_data),
+	cmd_args(cmd_args)
+{
+	if (!run())
+		g_mainloop.exit(1);
+}
+
+
 ClientLauncher::~ClientLauncher()
 {
 	delete input;
@@ -85,7 +95,7 @@ ClientLauncher::~ClientLauncher()
 }
 
 
-bool ClientLauncher::run(GameStartData &start_data, const Settings &cmd_args)
+bool ClientLauncher::run()
 {
 	/* This function is called when a client must be started.
 	 * Covered cases:
@@ -94,7 +104,7 @@ bool ClientLauncher::run(GameStartData &start_data, const Settings &cmd_args)
 	 *   - Local server (for main menu only)
 	*/
 
-	init_args(start_data, cmd_args);
+	init_args();
 
 #if USE_SOUND
 	if (g_settings->getBool("enable_sound"))
@@ -227,8 +237,7 @@ bool ClientLauncher::run(GameStartData &start_data, const Settings &cmd_args)
 			guiroot = m_rendering_engine->get_gui_env()->addStaticText(L"",
 				core::rect<s32>(0, 0, 10000, 10000));
 
-			bool game_has_run = launch_game(error_message, reconnect_requested,
-				start_data, cmd_args);
+			bool game_has_run = launch_game(error_message, reconnect_requested);
 
 			// Reset the reconnect_requested flag
 			reconnect_requested = false;
@@ -310,7 +319,7 @@ bool ClientLauncher::run(GameStartData &start_data, const Settings &cmd_args)
 	return retval;
 }
 
-void ClientLauncher::init_args(GameStartData &start_data, const Settings &cmd_args)
+void ClientLauncher::init_args()
 {
 	skip_main_menu = cmd_args.getFlag("go");
 
@@ -368,8 +377,7 @@ void ClientLauncher::init_input()
 }
 
 bool ClientLauncher::launch_game(std::string &error_message,
-		bool reconnect_requested, GameStartData &start_data,
-		const Settings &cmd_args)
+		bool reconnect_requested)
 {
 	// Prepare and check the start data to launch a game
 	std::string error_message_lua = error_message;

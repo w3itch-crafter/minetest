@@ -27,6 +27,8 @@ struct SubgameSpec;
 struct GameParams
 {
 	GameParams() = default;
+	// Virtual so it is safe to delete from any pointer
+	virtual ~GameParams() {}
 
 	u16 socket_port;
 	std::string world_path;

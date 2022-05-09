@@ -81,6 +81,7 @@ public:
 	DISABLE_CLASS_COPY(SettingsHierarchy)
 
 	Settings *getLayer(int layer) const;
+	void clearLayers();
 
 private:
 	friend class Settings;
@@ -126,6 +127,7 @@ public:
 	/* These functions operate on the global hierarchy! */
 	static Settings *createLayer(SettingsLayer sl, const std::string &end_tag = "");
 	static Settings *getLayer(SettingsLayer sl);
+	static void clearLayers();
 	/**/
 
 	Settings(const std::string &end_tag = "") :

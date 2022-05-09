@@ -340,6 +340,7 @@ set(common_SRCS
 	${mapgen_SRCS}
 	${server_SRCS}
 	${content_SRCS}
+	asyncloop.cpp
 	ban.cpp
 	chat.cpp
 	clientiface.cpp
