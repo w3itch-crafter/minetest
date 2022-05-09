@@ -144,6 +144,7 @@ LOCAL_SRC_FILES := \
 	$(wildcard ../../src/threading/*.cpp)        \
 	$(wildcard ../../src/util/*.c)               \
 	$(wildcard ../../src/util/*.cpp)             \
+	../../src/asyncloop.cpp                      \
 	../../src/ban.cpp                            \
 	../../src/chat.cpp                           \
 	../../src/clientiface.cpp                    \
