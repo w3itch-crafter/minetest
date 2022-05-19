@@ -28,6 +28,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <algorithm>
 #include <array>
+#include <cstdarg>
 #include <sstream>
 #include <iomanip>
 #include <unordered_map>
