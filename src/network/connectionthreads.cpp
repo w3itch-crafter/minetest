@@ -46,10 +46,6 @@ namespace con
 
 #define WINDOW_SIZE 5
 
-static session_t readPeerId(const u8 *packetdata)
-{
-	return readU16(&packetdata[4]);
-}
 static u8 readChannel(const u8 *packetdata)
 {
 	return readU8(&packetdata[6]);
@@ -207,9 +203,6 @@ void ConnectionSendThread::runTimeouts(float dtime)
 		float resend_timeout = udpPeer->getResendTimeout();
 		for (Channel &channel : udpPeer->channels) {
 
-			// Remove timed out incomplete unreliable split packets
-			channel.incoming_splits.removeUnreliableTimedOuts(dtime, m_timeout);
-
 			// Increment reliable packet times
 			channel.outgoing_reliables_sent.incrementTimeouts(dtime);
 
@@ -328,7 +321,7 @@ bool ConnectionSendThread::rawSendAsPacket(session_t peer_id, u8 channelnum,
 
 		// Add base headers and make a packet
 		BufferedPacketPtr p = con::makePacket(peer_address, reliable,
-			m_connection->GetProtocolID(), m_connection->GetPeerID(),
+			m_connection->GetPeerID(),
 			channelnum);
 
 		// first check if our send window is already maxed out
@@ -353,7 +346,7 @@ bool ConnectionSendThread::rawSendAsPacket(session_t peer_id, u8 channelnum,
 	if (peer->getAddress(MTP_UDP, peer_address)) {
 		// Add base headers and make a packet
 		BufferedPacketPtr p = con::makePacket(peer_address, data,
-			m_connection->GetProtocolID(), m_connection->GetPeerID(),
+			m_connection->GetPeerID(),
 			channelnum);
 
 		// Send the packet
@@ -660,8 +653,6 @@ void ConnectionSendThread::sendPackets(float dtime)
 
 			u16 next_to_ack = 0;
 			channel.outgoing_reliables_sent.getFirstSeqnum(next_to_ack);
-			u16 next_to_receive = 0;
-			channel.incoming_reliables.getFirstSeqnum(next_to_receive);
 
 			LOG(dout_con << m_connection->getDesc() << "\t channel: "
 				<< i << ", peer quota:"
@@ -670,12 +661,6 @@ void ConnectionSendThread::sendPackets(float dtime)
 				<< "\t\t\treliables on wire: "
 				<< channel.outgoing_reliables_sent.size()
 				<< ", waiting for ack for " << next_to_ack
-				<< std::endl
-				<< "\t\t\tincoming_reliables: "
-				<< channel.incoming_reliables.size()
-				<< ", next reliable packet: "
-				<< channel.readNextIncomingSeqNum()
-				<< ", next queued: " << next_to_receive
 				<< std::endl
 				<< "\t\t\treliables queued : "
 				<< channel.queued_reliables.size()
@@ -767,7 +752,7 @@ void ConnectionSendThread::sendAsPacket(session_t peer_id, u8 channelnum,
 	m_outgoing_queue.push(packet);
 }
 
-ConnectionReceiveThread::ConnectionReceiveThread(unsigned int max_packet_size) :
+ConnectionReceiveThread::ConnectionReceiveThread() :
 	Thread("ConnectionReceive")
 {
 }
@@ -782,14 +767,6 @@ void *ConnectionReceiveThread::run()
 	PROFILE(std::stringstream
 	ThreadIdentifier);
 	PROFILE(ThreadIdentifier << "ConnectionReceive: [" << m_connection->getDesc() << "]");
-
-	// use IPv6 minimum allowed MTU as receive buffer size as this is
-	// theoretical reliable upper boundary of a udp packet for all IPv6 enabled
-	// infrastructure
-	const unsigned int packet_maxsize = 1500;
-	SharedBuffer<u8> packetdata(packet_maxsize);
-
-	bool packet_queued = true;
 
 #ifdef DEBUG_CONNECTION_KBPS
 	u64 curtime = porting::getTimeMs();
@@ -808,8 +785,11 @@ void *ConnectionReceiveThread::run()
 		float dtime = CALC_DTIME(lasttime,curtime);
 #endif
 
+		/* process timeouts */
+		m_connection->m_timeout_queue.processTimeouts();
+
 		/* receive packets */
-		receive(packetdata, packet_queued);
+		receive();
 
 #ifdef DEBUG_CONNECTION_KBPS
 		debug_print_timer += dtime;
@@ -869,490 +849,73 @@ void *ConnectionReceiveThread::run()
 }
 
 // Receive packets from the network and buffers and create ConnectionEvents
-void ConnectionReceiveThread::receive(SharedBuffer<u8> &packetdata,
-		bool &packet_queued)
+void ConnectionReceiveThread::receive()
 {
+	// Call Receive() to wait for incoming data
+	ReceivedPacketPtr rpkt = ReceivedPacket::make();
+	s32 received_size = m_connection->m_udpSocket.Receive(
+		rpkt->source_address, rpkt->data, sizeof(rpkt->data));
+	if (received_size < 0)
+		return;
+
+	rpkt->received_time_ms = porting::getTimeMs();
+	rpkt->data_size = received_size;
+
 	try {
-		// First, see if there any buffered packets we can process now
-		if (packet_queued) {
-			session_t peer_id;
-			SharedBuffer<u8> resultdata;
-			while (true) {
-				try {
-					if (!getFromBuffers(peer_id, resultdata))
-						break;
-
-					m_connection->putEvent(ConnectionEvent::dataReceived(peer_id, resultdata));
-				}
-				catch (ProcessedSilentlyException &e) {
-					/* try reading again */
-				}
-			}
-			packet_queued = false;
-		}
-
-		// Call Receive() to wait for incoming data
-		Address sender;
-		s32 received_size = m_connection->m_udpSocket.Receive(sender,
-			*packetdata, packetdata.getSize());
-		if (received_size < 0)
-			return;
-
-		if ((received_size < BASE_HEADER_SIZE) ||
-				(readU32(&packetdata[0]) != m_connection->GetProtocolID())) {
-			LOG(derr_con << m_connection->getDesc()
-				<< "Receive(): Invalid incoming packet, "
-				<< "size: " << received_size
-				<< ", protocol: "
-				<< ((received_size >= 4) ? readU32(&packetdata[0]) : -1)
-				<< std::endl);
-			return;
-		}
-
-		session_t peer_id = readPeerId(*packetdata);
-		u8 channelnum = readChannel(*packetdata);
-
-		if (channelnum > CHANNEL_COUNT - 1) {
-			LOG(derr_con << m_connection->getDesc()
-				<< "Receive(): Invalid channel " << (u32)channelnum << std::endl);
-			return;
-		}
-
-		/* Try to identify peer by sender address (may happen on join) */
-		if (peer_id == PEER_ID_INEXISTENT) {
-			peer_id = m_connection->lookupPeer(sender);
-			// We do not have to remind the peer of its
-			// peer id as the CONTROLTYPE_SET_PEER_ID
-			// command was sent reliably.
-		}
-
-		if (peer_id == PEER_ID_INEXISTENT) {
-			/* Ignore it if we are a client */
-			if (m_connection->ConnectedToServer())
-				return;
-			/* The peer was not found in our lists. Add it. */
-			peer_id = m_connection->createPeer(sender, MTP_MINETEST_RELIABLE_UDP, 0);
-		}
-
-		PeerHelper peer = m_connection->getPeerNoEx(peer_id);
-		if (!peer) {
-			LOG(dout_con << m_connection->getDesc()
-				<< " got packet from unknown peer_id: "
-				<< peer_id << " Ignoring." << std::endl);
-			return;
-		}
-
-		// Validate peer address
-
-		Address peer_address;
-		if (peer->getAddress(MTP_UDP, peer_address)) {
-			if (peer_address != sender) {
-				LOG(derr_con << m_connection->getDesc()
-					<< " Peer " << peer_id << " sending from different address."
-					" Ignoring." << std::endl);
-				return;
-			}
-		} else {
-			LOG(derr_con << m_connection->getDesc()
-				<< " Peer " << peer_id << " doesn't have an address?!"
-				" Ignoring." << std::endl);
-			return;
-		}
-
-		peer->ResetTimeout();
-
-		Channel *channel = nullptr;
-		if (dynamic_cast<UDPPeer *>(&peer)) {
-			channel = &dynamic_cast<UDPPeer *>(&peer)->channels[channelnum];
-		} else {
-			LOG(derr_con << m_connection->getDesc()
-				<< "Receive(): peer_id=" << peer_id << " isn't an UDPPeer?!"
-				" Ignoring." << std::endl);
-			return;
-		}
-
-		channel->UpdateBytesReceived(received_size);
-
-		// Throw the received packet to channel->processPacket()
-
-		// Make a new SharedBuffer from the data without the base headers
-		SharedBuffer<u8> strippeddata(received_size - BASE_HEADER_SIZE);
-		memcpy(*strippeddata, &packetdata[BASE_HEADER_SIZE],
-			strippeddata.getSize());
-
-		try {
-			// Process it (the result is some data with no headers made by us)
-			SharedBuffer<u8> resultdata = processPacket
-				(channel, strippeddata, peer_id, channelnum, false);
-
-			LOG(dout_con << m_connection->getDesc()
-				<< " ProcessPacket from peer_id: " << peer_id
-				<< ", channel: " << (u32)channelnum << ", returned "
-				<< resultdata.getSize() << " bytes" << std::endl);
-
-			m_connection->putEvent(ConnectionEvent::dataReceived(peer_id, resultdata));
-		}
-		catch (ProcessedSilentlyException &e) {
-		}
-		catch (ProcessedQueued &e) {
-			// we set it to true anyway (see below)
-		}
-
-		/* Every time we receive a packet it can happen that a previously
-		 * buffered packet is now ready to process. */
-		packet_queued = true;
+		rpkt->parse();
+	} catch (const ParseError &exc) {
+		derr_con << m_connection->getDesc()
+			<< "Receive(): Invalid incoming packet, "
+			<< exc.what() << std::endl;
+		return;
 	}
-	catch (InvalidIncomingDataException &e) {
+
+	/* Try to identify peer by sender address (may happen on join) */
+	if (rpkt->peer_id == PEER_ID_INEXISTENT) {
+		rpkt->peer_id = m_connection->lookupPeer(rpkt->source_address);
+		// We do not have to remind the peer of its
+		// peer id as the CONTROLTYPE_SET_PEER_ID
+		// command was sent reliably.
 	}
-}
 
-bool ConnectionReceiveThread::getFromBuffers(session_t &peer_id, SharedBuffer<u8> &dst)
-{
-	std::vector<session_t> peerids = m_connection->getPeerIDs();
-
-	for (session_t peerid : peerids) {
-		PeerHelper peer = m_connection->getPeerNoEx(peerid);
-		if (!peer)
-			continue;
-
-		UDPPeer *p = dynamic_cast<UDPPeer *>(&peer);
-		if (!p)
-			continue;
-
-		for (Channel &channel : p->channels) {
-			if (checkIncomingBuffers(&channel, peer_id, dst)) {
-				return true;
-			}
-		}
+	if (rpkt->peer_id == PEER_ID_INEXISTENT) {
+		/* Ignore it if we are a client */
+		if (m_connection->ConnectedToServer())
+			return;
+		/* The peer was not found in our lists. Add it. */
+		rpkt->peer_id = m_connection->createPeer(rpkt->source_address, MTP_MINETEST_RELIABLE_UDP, 0);
 	}
-	return false;
-}
 
-bool ConnectionReceiveThread::checkIncomingBuffers(Channel *channel,
-	session_t &peer_id, SharedBuffer<u8> &dst)
-{
-	u16 firstseqnum = 0;
-	if (!channel->incoming_reliables.getFirstSeqnum(firstseqnum))
-		return false;
+	// Log the full packet, so later log entries only need to refer to the UUID.
+	if (dout_con) {
+		dout_con << m_connection->getDesc() << " received: ";
+		rpkt->dump(dout_con);
+	}
 
-	if (firstseqnum != channel->readNextIncomingSeqNum())
-		return false;
+	session_t peer_id = rpkt->peer_id;
+	if (peer_id >= MAX_UDP_PEERS) {
+		dout_con << rpkt << " Invalid peer_id" << std::endl;
+		return;
+	}
 
-	BufferedPacketPtr p = channel->incoming_reliables.popFirst();
-
-	peer_id = readPeerId(p->data); // Carried over to caller function
-	u8 channelnum = readChannel(p->data);
-	u16 seqnum = p->getSeqnum();
-
-	LOG(dout_con << m_connection->getDesc()
-		<< "UNBUFFERING TYPE_RELIABLE"
-		<< " seqnum=" << seqnum
-		<< " peer_id=" << peer_id
-		<< " channel=" << ((int) channelnum & 0xff)
-		<< std::endl);
-
-	channel->incNextIncomingSeqNum();
-
-	u32 headers_size = BASE_HEADER_SIZE + RELIABLE_HEADER_SIZE;
-	// Get out the inside packet and re-process it
-	SharedBuffer<u8> payload(p->size() - headers_size);
-	memcpy(*payload, &p->data[headers_size], payload.getSize());
-
-	dst = processPacket(channel, payload, peer_id, channelnum, true);
-	return true;
-}
-
-SharedBuffer<u8> ConnectionReceiveThread::processPacket(Channel *channel,
-	const SharedBuffer<u8> &packetdata, session_t peer_id, u8 channelnum, bool reliable)
-{
 	PeerHelper peer = m_connection->getPeerNoEx(peer_id);
-
 	if (!peer) {
-		errorstream << "Peer not found (possible timeout)" << std::endl;
-		throw ProcessedSilentlyException("Peer not found (possible timeout)");
+		dout_con << rpkt << " Unknown peer_id. Ignoring." << std::endl;
+		return;
 	}
 
-	if (packetdata.getSize() < 1)
-		throw InvalidIncomingDataException("packetdata.getSize() < 1");
-
-	u8 type = readU8(&(packetdata[0]));
-
-	if (MAX_UDP_PEERS <= 65535 && peer_id >= MAX_UDP_PEERS) {
-		std::string errmsg = "Invalid peer_id=" + itos(peer_id);
-		errorstream << errmsg << std::endl;
-		throw InvalidIncomingDataException(errmsg.c_str());
-	}
-
-	if (type >= PACKET_TYPE_MAX) {
-		derr_con << m_connection->getDesc() << "Got invalid type=" << ((int) type & 0xff)
-			<< std::endl;
-		throw InvalidIncomingDataException("Invalid packet type");
-	}
-
-	const PacketTypeHandler &pHandle = packetTypeRouter[type];
-	return (this->*pHandle.handler)(channel, packetdata, &peer, channelnum, reliable);
-}
-
-const ConnectionReceiveThread::PacketTypeHandler
-	ConnectionReceiveThread::packetTypeRouter[PACKET_TYPE_MAX] = {
-	{&ConnectionReceiveThread::handlePacketType_Control},
-	{&ConnectionReceiveThread::handlePacketType_Original},
-	{&ConnectionReceiveThread::handlePacketType_Split},
-	{&ConnectionReceiveThread::handlePacketType_Reliable},
-};
-
-SharedBuffer<u8> ConnectionReceiveThread::handlePacketType_Control(Channel *channel,
-	const SharedBuffer<u8> &packetdata, Peer *peer, u8 channelnum, bool reliable)
-{
-	if (packetdata.getSize() < 2)
-		throw InvalidIncomingDataException("packetdata.getSize() < 2");
-
-	ControlType controltype = (ControlType)readU8(&(packetdata[1]));
-
-	if (controltype == CONTROLTYPE_ACK) {
-		assert(channel != NULL);
-
-		if (packetdata.getSize() < 4) {
-			throw InvalidIncomingDataException(
-				"packetdata.getSize() < 4 (ACK header size)");
-		}
-
-		u16 seqnum = readU16(&packetdata[2]);
-		LOG(dout_con << m_connection->getDesc() << " [ CONTROLTYPE_ACK: channelnum="
-			<< ((int) channelnum & 0xff) << ", peer_id=" << peer->id << ", seqnum="
-			<< seqnum << " ]" << std::endl);
-
-		try {
-			BufferedPacketPtr p = channel->outgoing_reliables_sent.popSeqnum(seqnum);
-
-			// the rtt calculation will be a bit off for re-sent packets but that's okay
-			{
-				// Get round trip time
-				u64 current_time = porting::getTimeMs();
-
-				// a overflow is quite unlikely but as it'd result in major
-				// rtt miscalculation we handle it here
-				if (current_time > p->absolute_send_time) {
-					float rtt = (current_time - p->absolute_send_time) / 1000.0;
-
-					// Let peer calculate stuff according to it
-					// (avg_rtt and resend_timeout)
-					dynamic_cast<UDPPeer *>(peer)->reportRTT(rtt);
-				} else if (p->totaltime > 0) {
-					float rtt = p->totaltime;
-
-					// Let peer calculate stuff according to it
-					// (avg_rtt and resend_timeout)
-					dynamic_cast<UDPPeer *>(peer)->reportRTT(rtt);
-				}
-			}
-
-			// put bytes for max bandwidth calculation
-			channel->UpdateBytesSent(p->size(), 1);
-			if (channel->outgoing_reliables_sent.size() == 0)
-				m_connection->TriggerSend();
-		} catch (NotFoundException &e) {
-			LOG(derr_con << m_connection->getDesc()
-				<< "WARNING: ACKed packet not in outgoing queue"
-				<< " seqnum=" << seqnum << std::endl);
-			channel->UpdatePacketTooLateCounter();
-		}
-
-		throw ProcessedSilentlyException("Got an ACK");
-	} else if (controltype == CONTROLTYPE_SET_PEER_ID) {
-		// Got a packet to set our peer id
-		if (packetdata.getSize() < 4)
-			throw InvalidIncomingDataException
-				("packetdata.getSize() < 4 (SET_PEER_ID header size)");
-		session_t peer_id_new = readU16(&packetdata[2]);
-		LOG(dout_con << m_connection->getDesc() << "Got new peer id: " << peer_id_new
-			<< "... " << std::endl);
-
-		if (m_connection->GetPeerID() != PEER_ID_INEXISTENT) {
-			LOG(derr_con << m_connection->getDesc()
-				<< "WARNING: Not changing existing peer id." << std::endl);
-		} else {
-			LOG(dout_con << m_connection->getDesc() << "changing own peer id"
-				<< std::endl);
-			m_connection->SetPeerID(peer_id_new);
-		}
-
-		throw ProcessedSilentlyException("Got a SET_PEER_ID");
-	} else if (controltype == CONTROLTYPE_PING) {
-		// Just ignore it, the incoming data already reset
-		// the timeout counter
-		LOG(dout_con << m_connection->getDesc() << "PING" << std::endl);
-		throw ProcessedSilentlyException("Got a PING");
-	} else if (controltype == CONTROLTYPE_DISCO) {
-		// Just ignore it, the incoming data already reset
-		// the timeout counter
-		LOG(dout_con << m_connection->getDesc() << "DISCO: Removing peer "
-			<< peer->id << std::endl);
-
-		if (!m_connection->deletePeer(peer->id, false)) {
-			derr_con << m_connection->getDesc() << "DISCO: Peer not found" << std::endl;
-		}
-
-		throw ProcessedSilentlyException("Got a DISCO");
-	} else {
-		LOG(derr_con << m_connection->getDesc()
-			<< "INVALID controltype="
-			<< ((int) controltype & 0xff) << std::endl);
-		throw InvalidIncomingDataException("Invalid control type");
-	}
-}
-
-SharedBuffer<u8> ConnectionReceiveThread::handlePacketType_Original(Channel *channel,
-	const SharedBuffer<u8> &packetdata, Peer *peer, u8 channelnum, bool reliable)
-{
-	if (packetdata.getSize() <= ORIGINAL_HEADER_SIZE)
-		throw InvalidIncomingDataException
-			("packetdata.getSize() <= ORIGINAL_HEADER_SIZE");
-	LOG(dout_con << m_connection->getDesc() << "RETURNING TYPE_ORIGINAL to user"
-		<< std::endl);
-	// Get the inside packet out and return it
-	SharedBuffer<u8> payload(packetdata.getSize() - ORIGINAL_HEADER_SIZE);
-	memcpy(*payload, &(packetdata[ORIGINAL_HEADER_SIZE]), payload.getSize());
-	return payload;
-}
-
-SharedBuffer<u8> ConnectionReceiveThread::handlePacketType_Split(Channel *channel,
-	const SharedBuffer<u8> &packetdata, Peer *peer, u8 channelnum, bool reliable)
-{
+	// Validate peer address
 	Address peer_address;
-
 	if (peer->getAddress(MTP_UDP, peer_address)) {
-		// We have to create a packet again for buffering
-		// This isn't actually too bad an idea.
-		BufferedPacketPtr packet = con::makePacket(peer_address,
-			packetdata,
-			m_connection->GetProtocolID(),
-			peer->id,
-			channelnum);
-
-		// Buffer the packet
-		SharedBuffer<u8> data = peer->addSplitPacket(channelnum, packet, reliable);
-
-		if (data.getSize() != 0) {
-			LOG(dout_con << m_connection->getDesc()
-				<< "RETURNING TYPE_SPLIT: Constructed full data, "
-				<< "size=" << data.getSize() << std::endl);
-			return data;
+		if (peer_address != rpkt->source_address) {
+			derr_con << rpkt << " Sending from different address. Ignoring." << std::endl;
+			return;
 		}
-		LOG(dout_con << m_connection->getDesc() << "BUFFERED TYPE_SPLIT" << std::endl);
-		throw ProcessedSilentlyException("Buffered a split packet chunk");
-	}
-
-	// We should never get here.
-	FATAL_ERROR("Invalid execution point");
-}
-
-SharedBuffer<u8> ConnectionReceiveThread::handlePacketType_Reliable(Channel *channel,
-	const SharedBuffer<u8> &packetdata, Peer *peer, u8 channelnum, bool reliable)
-{
-	assert(channel != NULL);
-
-	// Recursive reliable packets not allowed
-	if (reliable)
-		throw InvalidIncomingDataException("Found nested reliable packets");
-
-	if (packetdata.getSize() < RELIABLE_HEADER_SIZE)
-		throw InvalidIncomingDataException("packetdata.getSize() < RELIABLE_HEADER_SIZE");
-
-	const u16 seqnum = readU16(&packetdata[1]);
-	bool is_future_packet = false;
-	bool is_old_packet = false;
-
-	/* packet is within our receive window send ack */
-	if (seqnum_in_window(seqnum,
-		channel->readNextIncomingSeqNum(), MAX_RELIABLE_WINDOW_SIZE)) {
-		m_connection->sendAck(peer->id, channelnum, seqnum);
 	} else {
-		is_future_packet = seqnum_higher(seqnum, channel->readNextIncomingSeqNum());
-		is_old_packet = seqnum_higher(channel->readNextIncomingSeqNum(), seqnum);
-
-		/* packet is not within receive window, don't send ack.           *
-		 * if this was a valid packet it's gonna be retransmitted         */
-		if (is_future_packet)
-			throw ProcessedSilentlyException(
-				"Received packet newer then expected, not sending ack");
-
-		/* seems like our ack was lost, send another one for a old packet */
-		if (is_old_packet) {
-			LOG(dout_con << m_connection->getDesc()
-				<< "RE-SENDING ACK: peer_id: " << peer->id
-				<< ", channel: " << (channelnum & 0xFF)
-				<< ", seqnum: " << seqnum << std::endl;)
-			m_connection->sendAck(peer->id, channelnum, seqnum);
-
-			// we already have this packet so this one was on wire at least
-			// the current timeout
-			// we don't know how long this packet was on wire don't do silly guessing
-			// dynamic_cast<UDPPeer*>(&peer)->
-			//     reportRTT(dynamic_cast<UDPPeer*>(&peer)->getResendTimeout());
-
-			throw ProcessedSilentlyException("Retransmitting ack for old packet");
-		}
+		derr_con << rpkt << " Peer doesn't have an address?! Ignoring." << std::endl;
+		return;
 	}
-
-	if (seqnum != channel->readNextIncomingSeqNum()) {
-		Address peer_address;
-
-		// this is a reliable packet so we have a udp address for sure
-		peer->getAddress(MTP_MINETEST_RELIABLE_UDP, peer_address);
-		// This one comes later, buffer it.
-		// Actually we have to make a packet to buffer one.
-		// Well, we have all the ingredients, so just do it.
-		BufferedPacketPtr packet = con::makePacket(
-			peer_address,
-			packetdata,
-			m_connection->GetProtocolID(),
-			peer->id,
-			channelnum);
-		try {
-			channel->incoming_reliables.insert(packet, channel->readNextIncomingSeqNum());
-
-			LOG(dout_con << m_connection->getDesc()
-				<< "BUFFERING, TYPE_RELIABLE peer_id: " << peer->id
-				<< ", channel: " << (channelnum & 0xFF)
-				<< ", seqnum: " << seqnum << std::endl;)
-
-			throw ProcessedQueued("Buffered future reliable packet");
-		} catch (AlreadyExistsException &e) {
-		} catch (IncomingDataCorruption &e) {
-			m_connection->putCommand(ConnectionCommand::disconnect_peer(peer->id));
-
-			LOG(derr_con << m_connection->getDesc()
-				<< "INVALID, TYPE_RELIABLE peer_id: " << peer->id
-				<< ", channel: " << (channelnum & 0xFF)
-				<< ", seqnum: " << seqnum
-				<< "DROPPING CLIENT!" << std::endl;)
-		}
-	}
-
-	/* we got a packet to process right now */
-	LOG(dout_con << m_connection->getDesc()
-		<< "RECURSIVE, TYPE_RELIABLE peer_id: " << peer->id
-		<< ", channel: " << (channelnum & 0xFF)
-		<< ", seqnum: " << seqnum << std::endl;)
-
-
-	/* check for resend case */
-	u16 queued_seqnum = 0;
-	if (channel->incoming_reliables.getFirstSeqnum(queued_seqnum)) {
-		if (queued_seqnum == seqnum) {
-			BufferedPacketPtr queued_packet = channel->incoming_reliables.popFirst();
-			/** TODO find a way to verify the new against the old packet */
-		}
-	}
-
-	channel->incNextIncomingSeqNum();
-
-	// Get out the inside packet and re-process it
-	SharedBuffer<u8> payload(packetdata.getSize() - RELIABLE_HEADER_SIZE);
-	memcpy(*payload, &packetdata[RELIABLE_HEADER_SIZE], payload.getSize());
-
-	return processPacket(channel, payload, peer->id, channelnum, true);
+	peer->ProcessPacket(std::move(rpkt));
 }
 
-}
+} // namespace con

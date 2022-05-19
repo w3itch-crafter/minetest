@@ -26,6 +26,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "network/connection.h"
 #include "network/networkpacket.h"
 #include "network/socket.h"
+#include "network/packet.h"
 
 class TestConnection : public TestBase {
 public:
@@ -116,7 +117,6 @@ void TestConnection::testNetworkPacketSerialize()
 void TestConnection::testHelpers()
 {
 	// Some constants for testing
-	u32 proto_id = 0x12345678;
 	session_t peer_id = 123;
 	u8 channel = 2;
 	SharedBuffer<u8> data1(1);
@@ -125,7 +125,7 @@ void TestConnection::testHelpers()
 	const u16 seqnum = 34352;
 
 	con::BufferedPacketPtr p1 = con::makePacket(a, data1,
-			proto_id, peer_id, channel);
+			peer_id, channel);
 	/*
 		We should now have a packet with this data:
 		Header:
@@ -135,7 +135,7 @@ void TestConnection::testHelpers()
 		Data:
 			[7] u8 data1[0]
 	*/
-	UASSERT(readU32(&p1->data[0]) == proto_id);
+	UASSERT(readU32(&p1->data[0]) == PROTOCOL_ID);
 	UASSERT(readU16(&p1->data[4]) == peer_id);
 	UASSERT(readU8(&p1->data[6]) == channel);
 	UASSERT(readU8(&p1->data[7]) == data1[0]);
@@ -165,8 +165,6 @@ void TestConnection::testConnectSendReceive()
 		NOTE: This mostly tests the legacy interface.
 	*/
 
-	u32 proto_id = 0xad26846a;
-
 	Handler hand_server("server");
 	Handler hand_client("client");
 
@@ -187,11 +185,11 @@ void TestConnection::testConnectSendReceive()
 	}
 
 	infostream << "** Creating server Connection" << std::endl;
-	con::Connection server(proto_id, 512, 5.0, false, &hand_server);
+	con::Connection server(512, 5.0, false, &hand_server);
 	server.Serve(address);
 
 	infostream << "** Creating client Connection" << std::endl;
-	con::Connection client(proto_id, 512, 5.0, false, &hand_client);
+	con::Connection client(512, 5.0, false, &hand_client);
 
 	UASSERT(hand_server.count == 0);
 	UASSERT(hand_client.count == 0);

@@ -71,13 +71,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "database/database-dummy.h"
 #include "gameparams.h"
 
-class ClientNotFoundException : public BaseException
-{
-public:
-	ClientNotFoundException(const char *s):
-		BaseException(s)
-	{}
-};
+DEFINE_EXCEPTION(ClientNotFoundException);
 
 class ServerThread : public Thread
 {
@@ -231,7 +225,7 @@ Server::Server(
 	m_simple_singleplayer_mode(simple_singleplayer_mode),
 	m_dedicated(dedicated),
 	m_async_fatal_error(""),
-	m_con(std::make_shared<con::Connection>(PROTOCOL_ID,
+	m_con(std::make_shared<con::Connection>(
 			512,
 			CONNECTION_TIMEOUT,
 			m_bind_addr.isIPv6(),

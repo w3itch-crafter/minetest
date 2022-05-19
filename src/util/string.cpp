@@ -920,3 +920,33 @@ void safe_print_string(std::ostream &os, const std::string &str)
 	}
 	os.setf(flags);
 }
+
+std::string StringPrintf(const char *format, ...)  {
+	va_list ap;
+	va_start(ap, format);
+	std::string tmp = VStringPrintf(format, ap);
+	va_end(ap);
+	return tmp;
+}
+
+std::string VStringPrintf(const char *format, va_list args) {
+	// Need to iterate through the arguments twice.
+	va_list args1;
+	va_list args2;
+	va_copy(args1, args);
+	va_copy(args2, args);
+
+	int bytesNeeded = vsnprintf(nullptr, 0, format, args1);
+	if (bytesNeeded < 0)
+		throw std::invalid_argument("Invalid StringPrintf format");
+
+	// vsnprintf writes a null-terminator, so make room for that, and
+	// then chop it off.
+	std::string buf(bytesNeeded + 1, 0);
+	vsnprintf(&buf[0], buf.size(), format, args2);
+	buf.resize(bytesNeeded);
+
+	va_end(args1);
+	va_end(args2);
+	return buf;
+}

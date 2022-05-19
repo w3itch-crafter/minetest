@@ -109,7 +109,7 @@ private:
 class ConnectionReceiveThread : public Thread
 {
 public:
-	ConnectionReceiveThread(unsigned int max_packet_size);
+	ConnectionReceiveThread();
 
 	void *run();
 
@@ -120,50 +120,7 @@ public:
 	}
 
 private:
-	void receive(SharedBuffer<u8> &packetdata, bool &packet_queued);
-
-	// Returns next data from a buffer if possible
-	// If found, returns true; if not, false.
-	// If found, sets peer_id and dst
-	bool getFromBuffers(session_t &peer_id, SharedBuffer<u8> &dst);
-
-	bool checkIncomingBuffers(
-			Channel *channel, session_t &peer_id, SharedBuffer<u8> &dst);
-
-	/*
-		Processes a packet with the basic header stripped out.
-		Parameters:
-			packetdata: Data in packet (with no base headers)
-			peer_id: peer id of the sender of the packet in question
-			channelnum: channel on which the packet was sent
-			reliable: true if recursing into a reliable packet
-	*/
-	SharedBuffer<u8> processPacket(Channel *channel,
-			const SharedBuffer<u8> &packetdata, session_t peer_id,
-			u8 channelnum, bool reliable);
-
-	SharedBuffer<u8> handlePacketType_Control(Channel *channel,
-			const SharedBuffer<u8> &packetdata, Peer *peer, u8 channelnum,
-			bool reliable);
-	SharedBuffer<u8> handlePacketType_Original(Channel *channel,
-			const SharedBuffer<u8> &packetdata, Peer *peer, u8 channelnum,
-			bool reliable);
-	SharedBuffer<u8> handlePacketType_Split(Channel *channel,
-			const SharedBuffer<u8> &packetdata, Peer *peer, u8 channelnum,
-			bool reliable);
-	SharedBuffer<u8> handlePacketType_Reliable(Channel *channel,
-			const SharedBuffer<u8> &packetdata, Peer *peer, u8 channelnum,
-			bool reliable);
-
-	struct PacketTypeHandler
-	{
-		SharedBuffer<u8> (ConnectionReceiveThread::*handler)(Channel *channel,
-				const SharedBuffer<u8> &packet, Peer *peer, u8 channelnum,
-				bool reliable);
-	};
-
-	static const PacketTypeHandler packetTypeRouter[PACKET_TYPE_MAX];
-
+	void receive();
 	Connection *m_connection = nullptr;
 };
-}
+} // namespace con
