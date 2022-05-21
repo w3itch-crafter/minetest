@@ -180,19 +180,19 @@ public:
 	// Enable profiling
 	static void enable()
 	{
-		m_profiling_enabled = true;
+		m_profiling_enabled.store(true, std::memory_order_relaxed);
 	}
 
 	// Disable profiling
 	static void disable()
 	{
-		m_profiling_enabled = false;
+		m_profiling_enabled.store(false, std::memory_order_relaxed);
 	}
 
 	// Check if profiling is enabled
 	static bool isEnabled()
 	{
-		return m_profiling_enabled;
+		return m_profiling_enabled.load(std::memory_order_relaxed);
 	}
 
 	void add(const std::string &name, float total_time, float self_time)
