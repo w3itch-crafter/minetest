@@ -354,7 +354,7 @@ void GameUI::toggleProfiler()
 	m_profiler_current_page += 1;
 
 	// Wrap around
-	if (m_profiler_current_page > m_profiler_print_pages + m_profiler_thread_names.size())
+	if (m_profiler_current_page > max_pages)
 		m_profiler_current_page = 0;
 
 	// Clear the chart
