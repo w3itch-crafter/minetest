@@ -582,7 +582,7 @@ void Client::step(float dtime)
 		}
 
 		if (num_processed_meshes > 0)
-			g_profiler->graphAdd("num_processed_meshes", num_processed_meshes);
+			g_profiler.graphAdd("num_processed_meshes", num_processed_meshes);
 	}
 
 	/*
@@ -902,7 +902,7 @@ void Client::ProcessData(NetworkPacket *pkt)
 
 	//infostream<<"Client: received command="<<command<<std::endl;
 	m_packetcounter.add((u16)command);
-	g_profiler->graphAdd("client_received_packets", 1);
+	g_profiler.graphAdd("client_received_packets", 1);
 
 	/*
 		If this check is removed, be sure to change the queue
