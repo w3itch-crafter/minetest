@@ -271,8 +271,8 @@ void GameUI::drawProfiler(video::IVideoDriver *driver, gui::IGUIFont *font)
 
 	u64 now = porting::getTimeMs();
 
-	// Update the chart using 50ms slices. With 256 entries, this
-	// makes the entire chart 12.8 seconds long
+	// Update the chart every 50ms.
+	// With 256 entries, this makes the entire chart 12.8 seconds long
 	if (now - m_profiler_thread_update_time > 50) {
 		m_profiler_thread_update_time = now;
 		int index = m_profiler_current_page - m_profiler_print_pages - 1;
@@ -280,12 +280,12 @@ void GameUI::drawProfiler(video::IVideoDriver *driver, gui::IGUIFont *font)
 		auto name = m_profiler_thread_names[index];
 		// Discard all other thread's data
 		auto thread_data = g_collector.getThreadMap()[name];
-		// Format it for the chart
+		// Use only the 'self' time for the chart
 		std::map<std::string, float> chart_data;
 		for (const auto &kv : thread_data) {
 			chart_data[kv.first] = kv.second.self;
 		}
-		m_profiler_thread_chart.setTitle(name);
+		m_profiler_thread_chart.setTitle(name + " Thread");
 		m_profiler_thread_chart.put(chart_data);
 	}
 	m_profiler_thread_chart.draw(core::rect<s32>(6, 50, 6 + 800, 50 + 400), driver, font);

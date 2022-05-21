@@ -94,10 +94,10 @@ public:
 
 	bool usingProfiler();
 
-	// called every frame to draw (for stacked area charts)
+	// called every frame (to draw thread charts)
 	void drawProfiler(video::IVideoDriver *driver, gui::IGUIFont *font);
 
-	// called every ~3 seconds to update GUI
+	// called every ~3 seconds
 	void updateProfiler();
 
 	void toggleChat();

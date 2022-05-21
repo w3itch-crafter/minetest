@@ -136,12 +136,14 @@ public:
 protected:
 	friend class Profiler;
 
-	void registerThread(Profiler *p) {
+	void registerThread(Profiler *p)
+	{
 		MutexAutoLock lock(m_mutex);
 		m_threads.insert(p);
 	}
 
-	void deregisterThread(Profiler *p) {
+	void deregisterThread(Profiler *p)
+	{
 		MutexAutoLock lock(m_mutex);
 		m_threads.erase(p);
 	}

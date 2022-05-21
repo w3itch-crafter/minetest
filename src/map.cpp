@@ -359,7 +359,7 @@ void Map::timerUpdate(float dtime, float unload_timeout, u32 max_loaded_blocks,
 					// Save if modified
 					if (block->getModified() != MOD_STATE_CLEAN
 							&& save_before_unloading) {
-						g_profiler.add(block->getModifiedReasonString(), 1, 0);
+						modprofiler[block->getModifiedReasonString()] += 1;
 						if (!saveBlock(block))
 							continue;
 						saved_blocks_count++;

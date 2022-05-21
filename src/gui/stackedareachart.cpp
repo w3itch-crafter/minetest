@@ -22,9 +22,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "stackedareachart.h"
 #include "util/string.h"
 
-// Ignore scopes less than 4% of total time
-#define CUTOFF_FRACTION 0.04
-
 // Don't divide by a scale smaller than this
 #define MIN_DIVISOR 0.0001
 
@@ -44,6 +41,8 @@ void StackedAreaChart::setTitle(const std::string &title)
 
 void StackedAreaChart::updateSmoothData(const StackedAreaData &values)
 {
+	// Smooth the data. This is similiar to a sliding window,
+	// but uses exponential decay.
 	std::set<std::string> names;
 	for (const auto &kv : values) {
 		names.insert(kv.first);
@@ -63,16 +62,14 @@ void StackedAreaChart::updateSmoothData(const StackedAreaData &values)
 void StackedAreaChart::put(const StackedAreaData &values)
 
 {
-	// Smooth the data. This is similiar to a sliding window,
-	// but uses exponential decay.
 	updateSmoothData(values);
 	putLog(m_smooth);
 }
 
 void StackedAreaChart::putLog(const StackedAreaData &data)
 {
-	// Scale the data so that it sums to 1.0f
-	// before inserting into the log
+	// Before inserting into the log, scale the time values
+	// so that they sum to 1.0
 	StackedAreaData final;
 	float scale = 0;
 	for (const auto &kv : data) {
@@ -97,12 +94,10 @@ void StackedAreaChart::putLog(const StackedAreaData &data)
 // When these run-out, colors are chosen at random
 static u32 colorMap[] = {
 	0x800080, // purple
-	0xb03060, // maroon3
 	0xff0000, // red
 	0xffa500, // orange
 	0xffff00, // yellow
 	0x7cfc00, // lawngreen
-	0x9400d3, // darkviolet
 	0x00ff7f, // springgreen
 	0x00ffff, // aqua
 	0x00bfff, // deepskyblue
@@ -122,12 +117,10 @@ static u32 colorMap[] = {
 	0x696969, // dimgray
 	0x800000, // maroon
 	0x808000, // olive
-	0x483d8b, // darkslateblue
 	0x008000, // green
-	0x008b8b, // darkcyan
 	0x000080, // navy
 	0x9acd32, // yellowgreen
-	0x8fbc8f, // darkseagreen
+	0xb03060, // maroon3
 };
 
 video::SColor StackedAreaChart::findFreeColor()
@@ -144,9 +137,9 @@ video::SColor StackedAreaChart::findFreeColor()
 	}
 	// Out of colors. Pick one at random.
 	u32 val = myrand();
-	u32 r = ((val >> 16)  & 0xFF) | 0x80; // 128 to 255
+	u32 r = ((val >> 16) & 0xFF) | 0x80; // 128 to 255
 	u32 g = ((val >> 8)  & 0xFF) | 0x80;
-	u32 b = ((val >> 0) & 0xFF) | 0x80;
+	u32 b = ((val >> 0)  & 0xFF) | 0x80;
 	return video::SColor(255, r, g, b);
 }
 
@@ -232,14 +225,14 @@ void StackedAreaChart::draw(
 		m_log_dirty = false;
 	}
 
-	s32 title_height = 50;
+	s32 title_height = 25;
 
 	s32 midX = (dest.UpperLeftCorner.X + dest.LowerRightCorner.X) / 2;
 
 	core::rect<s32> title_rect = core::rect<s32>(
 		dest.UpperLeftCorner.X,
 		dest.UpperLeftCorner.Y,
-		midX,
+		dest.LowerRightCorner.X,
 		dest.UpperLeftCorner.Y + title_height);
 
 	core::rect<s32> chart_rect = core::rect<s32>(
@@ -264,15 +257,20 @@ void StackedAreaChart::draw(
 		true); // useAlphaChannelOfTexture
 
 	auto white = video::SColor(255, 255, 255, 255);
+	char buf[256];
+
 	// Above the image print the title
 	if (!m_title.empty()) {
-		font->draw(utf8_to_wide(m_title).c_str(), title_rect, white);
+		font->draw(utf8_to_wide(m_title).c_str(), title_rect, white,
+			/* hcenter= */ true, /* vcenter= */ true);
 	}
 
 	// On the right half, print labels in alphabetic order
-	s32 label_height = m_colors.empty() ? 0 : labels_rect.getHeight() / m_colors.size();
+	s32 label_height = m_colors.size() ? labels_rect.getHeight() / m_colors.size() : 15;
+	if (label_height < 15)
+		label_height = 15;
+
 	size_t label_index = 0;
-	char buf[256];
 	for (const auto &nc : m_colors) {
 		s32 label_y_start = labels_rect.UpperLeftCorner.Y + label_index * label_height;
 		s32 label_y_end = label_y_start + label_height;

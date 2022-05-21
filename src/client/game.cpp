@@ -2351,7 +2351,6 @@ void Game::toggleDebug()
 		} else {
 			m_game_ui->showTranslatedStatusText("Debug info and profiler graph hidden");
 		}
-		Profiler::disable();
 	}
 }
 
