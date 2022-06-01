@@ -254,8 +254,8 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          dir
-          dir Release
+          dir bin
+          bin\Release\minetest.exe --run-unittests
 
       - name: CPack
         run: |
