@@ -97,7 +97,7 @@ jobs:
         run: |
           ./util/test_multiplayer.sh
 
-  # Slightly dated clang version
+  # Current clang version
   clang_10:
     runs-on: ubuntu-20.04
     steps:
@@ -113,32 +113,6 @@ jobs:
         env:
           CC: clang-10
           CXX: clang++-10
-          CMAKE_FLAGS: "-DREQUIRE_LUAJIT=1"
-
-      - name: Test
-        run: |
-          ./bin/minetest --run-unittests
-
-      - name: Valgrind
-        run: |
-          valgrind --leak-check=full --leak-check-heuristics=all --undef-value-errors=no --error-exitcode=9 ./bin/minetest --run-unittests
-
-  # Latest Clang
-  clang_14:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install deps
-        run: |
-          source ./util/ci/common.sh
-          install_linux_deps clang-14 valgrind libluajit-5.1-dev
-
-      - name: Build
-        run: |
-          ./util/ci/build.sh
-        env:
-          CC: clang-14
-          CXX: clang++-14
           CMAKE_FLAGS: "-DREQUIRE_LUAJIT=1"
 
       - name: Test
@@ -280,7 +254,7 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          ./bin/minetest --run-unittests
+          .\bin\minetest.exe --run-unittests
 
       - name: CPack
         run: |
