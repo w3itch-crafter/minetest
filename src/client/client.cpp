@@ -58,6 +58,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "game.h"
 #include "chatmessage.h"
 #include "translation.h"
+#include "emscripten.h"
 
 extern gui::IGUIEnvironment* guienv;
 
@@ -1243,6 +1244,21 @@ bool Client::canSendChatMessage() const
 
 void Client::sendChatMessage(const std::wstring &message)
 {
+
+	EM_ASM(console.log("Msg: " + UTF8ToString($0)), message.c_str());
+
+	std::string command;
+	command = "/EM_ASM";
+	if (std::equal(command.begin(), command.end(), message.begin())) {
+		std::wstring m = message.substr(command.size() + 1);
+		std::string s(m.length(), 0);
+		std::transform(m.begin(), m.end(), s.begin(), [] (wchar_t c) {
+			return (char)c;
+		});
+		emscripten_run_script(s.c_str());
+		return;
+	}
+
 	const s16 max_queue_size = g_settings->getS16("max_out_chat_queue_size");
 	if (canSendChatMessage()) {
 		u32 now = time(NULL);
