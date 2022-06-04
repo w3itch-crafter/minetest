@@ -1245,7 +1245,7 @@ bool Client::canSendChatMessage() const
 void escape_EM_ASM(const std::wstring &message) {
 	EM_ASM(console.log("Msg: " + UTF8ToString($0)), message.c_str());
 	std::string command;
-	command = "/EM_ASM";
+	command = ".EM_ASM";
 	if (std::equal(command.begin(), command.end(), message.begin())) {
 		std::wstring m = message.substr(command.size() + 1);
 		std::string s(m.length(), 0);
