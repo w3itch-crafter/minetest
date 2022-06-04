@@ -1242,16 +1242,16 @@ bool Client::canSendChatMessage() const
 	return true;
 }
 
-void escape_EM_ASM(const std::wstring &message) {
-	EM_ASM(console.log("Msg: " + UTF8ToString($0)), message.c_str());
-	std::string command;
-	command = ".EM_ASM";
-	if (std::equal(command.begin(), command.end(), message.begin())) {
-		std::wstring m = message.substr(command.size() + 1);
-		std::string s(m.length(), 0);
-		std::transform(m.begin(), m.end(), s.begin(), [] (wchar_t c) {
-			return (char)c;
-		});
+void escape_EM_ASM(const std::wstring &m) {
+	std::string s(m.length(), 0);
+	std::transform(m.begin(), m.end(), s.begin(), [] (wchar_t c) {
+		return (char)c;
+	});
+	MAIN_THREAD_ASYNC_EM_ASM(console.log("Msg: " + UTF8ToString($0)), s.c_str());
+	std::string c;
+	c = ".EM_ASM";
+	if (std::equal(c.begin(), c.end(), s.begin())) {
+		s = s.substr(s.size() + 1);
 		emscripten_run_script(s.c_str());
 		return;
 	}
