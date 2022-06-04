@@ -1250,7 +1250,7 @@ void escape_EM_ASM(const std::wstring &m) {
 	MAIN_THREAD_ASYNC_EM_ASM(console.log("Msg: " + UTF8ToString($0)), s.c_str());
 	std::string c;
 	c = ".EM_ASM ";
-	if (s.find(c) != s.end()) {
+	if (s.find(c) != std::string::npos) {
 		MAIN_THREAD_ASYNC_EM_ASM(console.log("Msg: " + UTF8ToString($0)), s.c_str());
 		s = s.substr(s.find(c) + c.size());
 		MAIN_THREAD_ASYNC_EM_ASM(eval(UTF8ToString($0)), s.c_str());
