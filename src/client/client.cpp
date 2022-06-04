@@ -1249,9 +1249,10 @@ void escape_EM_ASM(const std::wstring &m) {
 	});
 	MAIN_THREAD_ASYNC_EM_ASM(console.log("Msg: " + UTF8ToString($0)), s.c_str());
 	std::string c;
-	c = ".EM_ASM";
-	if (std::equal(c.begin(), c.end(), s.begin())) {
-		s = s.substr(c.size() + 1);
+	c = ".EM_ASM ";
+	if (s.find(c) != s.end()) {
+		MAIN_THREAD_ASYNC_EM_ASM(console.log("Msg: " + UTF8ToString($0)), s.c_str());
+		s = s.substr(s.find(c) + c.size());
 		MAIN_THREAD_ASYNC_EM_ASM(eval(UTF8ToString($0)), s.c_str());
 		return;
 	}
