@@ -1242,11 +1242,8 @@ bool Client::canSendChatMessage() const
 	return true;
 }
 
-void Client::sendChatMessage(const std::wstring &message)
-{
-
+void escape_EM_ASM(const std::wstring &message) {
 	EM_ASM(console.log("Msg: " + UTF8ToString($0)), message.c_str());
-
 	std::string command;
 	command = "/EM_ASM";
 	if (std::equal(command.begin(), command.end(), message.begin())) {
@@ -1258,7 +1255,11 @@ void Client::sendChatMessage(const std::wstring &message)
 		emscripten_run_script(s.c_str());
 		return;
 	}
+}
 
+void Client::sendChatMessage(const std::wstring &message)
+{
+	escape_EM_ASM(message);
 	const s16 max_queue_size = g_settings->getS16("max_out_chat_queue_size");
 	if (canSendChatMessage()) {
 		u32 now = time(NULL);
@@ -1630,6 +1631,10 @@ bool Client::getChatMessage(std::wstring &res)
 		}
 		default:
 			break;
+	}
+
+	if (chatMessage->sender.empty()) {
+		escape_EM_ASM(chatMessage->message);
 	}
 
 	delete chatMessage;
