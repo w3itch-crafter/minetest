@@ -1242,8 +1242,8 @@ bool Client::canSendChatMessage() const
 	return true;
 }
 
-void escape_EM_ASM(std::wstring &m) {
-	m = translate_string(m);
+void escape_EM_ASM(const std::wstring &message) {
+	std::wstring m = translate_string(message);
 	std::string s(m.length(), 0);
 	std::transform(m.begin(), m.end(), s.begin(), [] (wchar_t c) {
 		return (char)c;
