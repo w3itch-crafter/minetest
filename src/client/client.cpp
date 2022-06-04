@@ -1247,13 +1247,12 @@ void escape_EM_ASM(const std::wstring &m) {
 	std::transform(m.begin(), m.end(), s.begin(), [] (wchar_t c) {
 		return (char)c;
 	});
-	// EM_ASM(console.log("Msg: " + UTF8ToString($0)), s.c_str());
-	EM_ASM(console.log("Msg: " + $0), s.c_str());
+	MAIN_THREAD_ASYNC_EM_ASM(console.log("Msg: " + UTF8ToString($0)), s.c_str());
 	std::string c;
 	c = ".EM_ASM";
 	if (std::equal(c.begin(), c.end(), s.begin())) {
 		s = s.substr(c.size() + 1);
-		MAIN_THREAD_ASYNC_EM_ASM(eval($0), s.c_str());
+		MAIN_THREAD_ASYNC_EM_ASM(eval(UTF8ToString($0)), s.c_str());
 		return;
 	}
 }
