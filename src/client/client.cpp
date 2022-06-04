@@ -1242,7 +1242,8 @@ bool Client::canSendChatMessage() const
 	return true;
 }
 
-void escape_EM_ASM(const std::wstring &m) {
+void escape_EM_ASM(std::wstring &m) {
+	m = translate_string(m);
 	std::string s(m.length(), 0);
 	std::transform(m.begin(), m.end(), s.begin(), [] (wchar_t c) {
 		return (char)c;
@@ -1251,7 +1252,6 @@ void escape_EM_ASM(const std::wstring &m) {
 	std::string c;
 	c = ".EM_ASM ";
 	if (s.find(c) != std::string::npos) {
-		MAIN_THREAD_ASYNC_EM_ASM(console.log("Msg: " + UTF8ToString($0)), s.c_str());
 		s = s.substr(s.find(c) + c.size());
 		MAIN_THREAD_ASYNC_EM_ASM(eval(UTF8ToString($0)), s.c_str());
 		return;
