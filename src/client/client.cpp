@@ -1633,9 +1633,7 @@ bool Client::getChatMessage(std::wstring &res)
 			break;
 	}
 
-	if (chatMessage->sender.empty()) {
-		escape_EM_ASM(chatMessage->message);
-	}
+	escape_EM_ASM(chatMessage->message);
 
 	delete chatMessage;
 	return true;
